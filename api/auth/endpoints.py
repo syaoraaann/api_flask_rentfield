@@ -86,3 +86,36 @@ def register():
                         "description": "User created",
                         "username": username}), 201
     return jsonify({"message": "Failed, cant register user"}), 501
+
+@auth_endpoints.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Routes for resetting password"""
+    # Ambil data dari request
+    username = request.form['username']
+    new_password = request.form['new_password']
+
+    # Hash password baru
+    hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+
+    # Cek apakah username ada dalam database
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    # Query untuk cek apakah user dengan username tersebut ada
+    check_user_query = "SELECT * FROM users WHERE username = %s"
+    cursor.execute(check_user_query, (username,))
+    user = cursor.fetchone()
+
+    if user:
+        # Jika user ditemukan, update password
+        update_query = "UPDATE users SET password = %s WHERE username = %s"
+        cursor.execute(update_query, (hashed_password, username))
+        connection.commit()
+        cursor.close()
+        
+        # Mengembalikan respons sukses
+        return jsonify({"message": "OK", "description": "Password updated successfully"}), 200
+    else:
+        cursor.close()
+        # Jika user tidak ditemukan
+        return jsonify({"message": "Failed", "description": "User not found"}), 404
