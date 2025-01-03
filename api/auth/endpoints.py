@@ -57,11 +57,11 @@ def login():
 
     # Ambil role dari database
     role = user.get('role')
+    print(role)
 
     # Buat access token
     access_token = create_access_token(
-        identity={'username': username, 'role': role}
-    )
+        identity={'username': username}, additional_claims={'roles': role})
     decoded_token = decode_token(access_token)
     expires = decoded_token['exp']
 

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Route to read user data
 @list_field_endpoints.route('/read', methods=['GET'])
+@jwt_required()
 def read():
     """
     Route to fetch all data from the list_field table.
@@ -99,6 +100,7 @@ def update(id_field):
     Route to update a specific field in the list_field table.
     """
     connection = get_connection()
+    cursor = None
     try:
         cursor = connection.cursor(dictionary=True)
 
@@ -112,29 +114,36 @@ def update(id_field):
             return jsonify({"error": "Data not found or has been deleted"}), 404
 
         # If data is found, proceed with the update
-        field_name = request.form.get('field_name', existing_field['field_name'])
-        address = request.form.get('address', existing_field['address'])
-        description = request.form.get('description', existing_field['description'])
-        field_type = request.form.get('field_type', existing_field['field_type'])
-        capacity = request.form.get('capacity', existing_field['capacity'])
-        price = request.form.get('price', existing_field['price'])
-        image_url = request.form.get('image_url', existing_field['image_url'])
+        data = request.get_json()
 
+        field_name = data.get('field_name')
+        address = data.get('address')
+        description = data.get('description')
+        field_type = data.get('field_type')
+        price = data.get('price')
+        image_url = data.get('image_url')
+
+        # Check if all required fields are provided
+        if not all([field_name, address, description, field_type, price, image_url]):
+            return jsonify({"error": "All fields must be provided"}), 400
+
+        # Prepare the update query
         update_query = """
-        UPDATE list_field 
-        SET field_name=%s, address=%s, description=%s, field_type=%s, 
-            capacity=%s, price=%s, image_url=%s 
+        UPDATE list_field
+        SET field_name=%s, address=%s, description=%s, field_type=%s, price=%s, image_url=%s
         WHERE id_field=%s
         """
-        update_request = (field_name, address, description, field_type, capacity, price, image_url, id_field)
+        update_request = (field_name, address, description, field_type, price, image_url, id_field)
         cursor.execute(update_query, update_request)
         connection.commit()
 
         logger.info(f"Updated data for id_field {id_field}.")
         return jsonify({"message": "Updated successfully", "id_field": id_field}), 200
+
     except Exception as e:
         logger.error(f"Error updating data for id_field {id_field}: {str(e)}")
         return jsonify({"message": "Error updating data", "error": str(e)}), 500
+
     finally:
         # Ensure cursor and connection are closed
         if cursor:
@@ -146,7 +155,7 @@ def update(id_field):
 @jwt_required()
 def delete(id_field):
     """
-    Route to delete a field from the `list_field` table.
+    Route to delete a field from the `list_field` table.a
     """
     connection = get_connection()
     try:
