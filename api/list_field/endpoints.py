@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from flask_bcrypt import Bcrypt
 import logging
 
@@ -13,25 +13,36 @@ list_field_endpoints = Blueprint('list_field', __name__)  # Blueprint name corre
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Route to read user data
 @list_field_endpoints.route('/read', methods=['GET'])
 @jwt_required()
 def read():
     """
     Route to fetch all data from the list_field table.
     """
+    # Ambil identity dan role dari token JWT
+    identity = get_jwt_identity()
+    id_users = identity.get('id_users')
+    jwt_claims = get_jwt()  # Mengambil additional_claims dari token JWT
+    role = jwt_claims.get('roles')  # Ambil roles dari klaim tambahan
+
     connection = get_connection()
     try:
         cursor = connection.cursor(dictionary=True)
-        select_query = "SELECT * FROM list_field"
-        cursor.execute(select_query)
+
+        # Jika role adalah 'Owner', filter berdasarkan id_users
+        if role == 'Owner':
+            select_query = "SELECT * FROM list_field WHERE id_users = %s"
+            cursor.execute(select_query, (id_users,))
+        else:  # Jika role adalah 'User', ambil semua data
+            select_query = "SELECT * FROM list_field"
+            cursor.execute(select_query)
+
         results = cursor.fetchall()
-        logger.info("Fetched data from list_field successfully.")
+        logger.info(f"Fetched data from list_field for role {role}.")
     except Exception as e:
-        logger.error(f"Error fetching data from list_field: {str(e)}")
+        logger.error(f"Error fetching data from list_field for role {role}: {str(e)}")
         return jsonify({"message": "Error fetching data", "error": str(e)}), 500
     finally:
-        # Ensure resources are released even in case of an error
         if cursor:
             cursor.close()
         if connection:
@@ -46,6 +57,10 @@ def create():
     Route to create a new field in the `list_field` table using form-data.
     """
     try:
+        # Ambil id_users dari token JWT
+        identity = get_jwt_identity()  # Mendapatkan identity dari token
+        id_users = identity.get('id_users')  # Ambil id_users dari identity
+
         # Get required fields from the form
         field_name = request.form.get("field_name")
         address = request.form.get("address")
@@ -54,12 +69,12 @@ def create():
         if not field_name or not address:
             return jsonify({"message": "Missing required fields: field_name or address"}), 400
 
-        # Get optional fields from the form (using .get to avoid key errors)
-        description = request.form.get("description", "")  # Default to empty string if not provided
-        field_type = request.form.get("field_type", "Unknown")  # Default to "Unknown" if not provided
-        capacity = request.form.get("capacity", 0)  # Default to 0 if not provided
-        price = request.form.get("price", 0.0)  # Default to 0.0 if not provided
-        image_url = request.form.get("image_url", "")  # Default to empty string if not provided
+        # Get optional fields from the form
+        description = request.form.get("description", "")
+        field_type = request.form.get("field_type", "Unknown")
+        capacity = int(request.form.get("capacity", 0))
+        price = float(request.form.get("price", 0.0))
+        image_url = request.form.get("image_url", "")
 
         # Database connection (use context manager for proper resource handling)
         connection = get_connection()
@@ -67,17 +82,16 @@ def create():
 
         # Insert query
         insert_query = """
-        INSERT INTO list_field (field_name, address, description, field_type, capacity, price, image_url) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO list_field (field_name, address, description, field_type, capacity, price, image_url, id_users) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(insert_query, (field_name, address, description, field_type, capacity, price, image_url))
-        connection.commit()  # Commit changes to the database
+        cursor.execute(insert_query, (field_name, address, description, field_type, capacity, price, image_url, id_users))
+        connection.commit()
 
         # Get the newly inserted field ID
         new_id = cursor.lastrowid
         cursor.close()
 
-        # Check if insertion was successful
         if new_id:
             return jsonify({
                 "message": "Field created successfully",
@@ -87,11 +101,10 @@ def create():
         return jsonify({"message": "Cannot insert data"}), 500
 
     except ValueError as ve:
-        # Handle missing required fields or invalid data
         return jsonify({"message": "Validation error", "error": str(ve)}), 400
     except Exception as e:
-        # Handle other errors
         return jsonify({"message": "Error creating field", "error": str(e)}), 500
+
 
 @list_field_endpoints.route('/update/<id_field>', methods=['PUT'])
 @jwt_required()

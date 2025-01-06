@@ -55,13 +55,16 @@ def login():
     if not bcrypt.check_password_hash(user.get('password'), password):
         return jsonify({"msg": "Incorrect password"}), 401
 
-    # Ambil role dari database
+    # Ambil role dan id_users dari database
     role = user.get('role')
-    print(role)
+    id_users = user.get('id_users')  # Ambil id_users dari hasil query
+    print(f"Role: {role}, ID Users: {id_users}")
 
     # Buat access token
     access_token = create_access_token(
-        identity={'username': username}, additional_claims={'roles': role})
+        identity={'id_users': id_users, 'username': username},  # Tambahkan id_users ke identity
+        additional_claims={'roles': role}  # Tambahkan role ke claims
+    )
     decoded_token = decode_token(access_token)
     expires = decoded_token['exp']
 
@@ -72,7 +75,6 @@ def login():
         "username": user.get('username'),
         "role": role
     })
-
 
 # Route untuk registrasi user baru
 @auth_endpoints.route('/register', methods=['POST'])
