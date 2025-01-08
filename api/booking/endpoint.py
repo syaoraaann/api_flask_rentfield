@@ -19,24 +19,55 @@ logger = logging.getLogger(__name__)
 @jwt_required()
 def read():
     """
-    Route to fetch all bookings.
+    Route to fetch bookings for the logged-in user including field_name and total_price formatted with trailing 000.
     """
     identity = get_jwt_identity()
+    if not identity:
+        return jsonify({"message": "Invalid token. Identity not found."}), 401
+
     id_users = identity.get('id_users')
-    jwt_claims = get_jwt()
-    role = jwt_claims.get('roles')
 
     connection = get_connection()
     try:
         cursor = connection.cursor(dictionary=True)
-        if role == 'Owner':
-            query = "SELECT * FROM booking WHERE id_users = %s"
-            cursor.execute(query, (id_users,))
-        else:
-            query = "SELECT * FROM booking"
-            cursor.execute(query)
+        
+        # Query untuk mengambil data booking berdasarkan id_users
+        query = """
+            SELECT 
+                booking.*, 
+                list_field.field_name 
+            FROM booking
+            LEFT JOIN list_field ON booking.id_field = list_field.id_field
+            WHERE booking.id_users = %s
+        """
+        cursor.execute(query, (id_users,))
         results = cursor.fetchall()
-        logger.info(f"Fetched bookings for role {role}.")
+        
+        # Format data
+        for result in results:
+            # Format waktu jika ada timedelta
+            for key, value in result.items():
+                if isinstance(value, timedelta):
+                    result[key] = str(value)
+            
+            # Format total_price dengan menambahkan 000 di akhir
+            if "total_price" in result and result["total_price"] is not None:
+                try:
+                    # Konversi total_price ke float untuk memastikan nilainya benar
+                    total_price = float(result["total_price"])
+                    # Format total_price dengan menambahkan 000 di akhir
+                    result["total_price"] = f"{int(total_price)}.000"
+                except ValueError:
+                    result["total_price"] = "Invalid Price"
+
+        # Log jika data ditemukan atau tidak
+        if not results:
+            logger.info(f"No bookings found for user with id_users={id_users}.")
+            return jsonify({"message": "No bookings found."}), 404
+        
+        logger.info(f"Fetched bookings for user with id_users={id_users}.")
+        return jsonify(results), 200
+
     except Exception as e:
         logger.error(f"Error fetching bookings: {str(e)}")
         return jsonify({"message": "Error fetching bookings", "error": str(e)}), 500
@@ -44,8 +75,7 @@ def read():
         cursor.close()
         connection.close()
 
-    return jsonify({"message": "OK", "data": results}), 200
-
+        
 @booking_endpoints.route('/read_by_owner', methods=['GET'])
 @jwt_required()
 def get_bookings_by_owner():
